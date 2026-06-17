@@ -1,7 +1,7 @@
 {
   "name": "slayoox-bot",
-  "version": "2.0.0",
-  "description": "Bot Discord signalements",
+  "version": "1.0.0",
+  "description": "Bot Discord tournois Fortnite",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"

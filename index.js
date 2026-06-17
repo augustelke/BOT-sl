@@ -4,250 +4,224 @@ const {
     SlashCommandBuilder,
     EmbedBuilder,
     ActionRowBuilder,
-    StringSelectMenuBuilder,
+    ButtonBuilder,
+    ButtonStyle,
+    ModalBuilder,
+    TextInputBuilder,
+    TextInputStyle,
     PermissionFlagsBits,
     REST,
     Routes
 } = require('discord.js');
-const fs   = require('fs');
-const path = require('path');
-const crypto = require('crypto');
 
-const TOKEN     = process.env.DISCORD_TOKEN;
+const client = new Client({
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+    ]
+});
+
+const TOKEN = process.env.DISCORD_TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 
-// ─── Stockage JSON ────────────────────────────────────────────────────────────
-const DATA_FILE = path.join(__dirname, 'signals.json');
+const SALON_TOURNOI = '1502723683255320646';
+const SALON_ADMIN = '1502721949376188478';
 
-function loadData() {
-    try {
-        if (!fs.existsSync(DATA_FILE)) return { signals: [] };
-        return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-    } catch {
-        return { signals: [] };
-    }
-}
-
-function saveData(data) {
-    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
-}
-
-// ─── Client Discord ───────────────────────────────────────────────────────────
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
-
-// ─── Commandes Slash ──────────────────────────────────────────────────────────
+// Enregistrement de la commande slash
 const commands = [
-
     new SlashCommandBuilder()
-        .setName('signal')
-        .setDescription('Signaler un membre du serveur')
-        .addUserOption(opt =>
-            opt.setName('utilisateur')
-                .setDescription('Le membre à signaler')
+        .setName('tournage')
+        .setDescription('Créer un tournoi Fortnite')
+        .addStringOption(option =>
+            option.setName('nom')
+                .setDescription('Nom du tournoi')
                 .setRequired(true))
-        .addStringOption(opt =>
-            opt.setName('raison')
-                .setDescription('Raison du signalement')
-                .setRequired(true)
-                .addChoices(
-                    { name: '🤬 Harcèlement', value: 'Harcèlement' },
-                    { name: '📩 Spam',         value: 'Spam' },
-                    { name: '🎮 Triche',       value: 'Triche' },
-                    { name: '💢 Insultes',     value: 'Insultes' },
-                    { name: '❓ Autre',        value: 'Autre' }
-                ))
-        .addStringOption(opt =>
-            opt.setName('commentaire')
-                .setDescription('Détails supplémentaires (optionnel)')
-                .setRequired(false))
-        .toJSON(),
-
-    new SlashCommandBuilder()
-        .setName('supsignal')
-        .setDescription('Voir et supprimer vos signalements')
-        .toJSON(),
-
-    new SlashCommandBuilder()
-        .setName('adminsignal')
-        .setDescription('Voir tous les signalements du serveur [ADMIN]')
-        .addBooleanOption(opt =>
-            opt.setName('visible')
-                .setDescription('Rendre visible pour tout le monde ? (défaut : non)')
-                .setRequired(false))
+        .addStringOption(option =>
+            option.setName('horaires')
+                .setDescription('Horaires du tournoi (ex: Samedi 20h - 22h)')
+                .setRequired(true))
+        .addStringOption(option =>
+            option.setName('description')
+                .setDescription('Description du tournoi')
+                .setRequired(true))
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
         .toJSON()
 ];
 
-// ─── Prêt ─────────────────────────────────────────────────────────────────────
 client.once('ready', async () => {
-    console.log(`✅ Bot connecté : ${client.user.tag}`);
+    console.log(`✅ Bot connecté en tant que ${client.user.tag}`);
+
     const rest = new REST({ version: '10' }).setToken(TOKEN);
     try {
         await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
-        console.log('✅ Commandes /signal /supsignal /adminsignal enregistrées !');
-    } catch (err) {
-        console.error('❌ Erreur enregistrement commandes :', err);
+        console.log('✅ Commande /tournage enregistrée !');
+    } catch (error) {
+        console.error('Erreur enregistrement commandes :', error);
     }
 });
 
-// ─── Interactions ─────────────────────────────────────────────────────────────
 client.on('interactionCreate', async interaction => {
 
-    // ── /signal ──────────────────────────────────────────────────────────────
-    if (interaction.isChatInputCommand() && interaction.commandName === 'signal') {
-        const cible      = interaction.options.getUser('utilisateur');
-        const raison     = interaction.options.getString('raison');
-        const commentaire = interaction.options.getString('commentaire') || 'Aucun commentaire';
+    // ─── Commande /tournage ───────────────────────────────────────────────
+    if (interaction.isChatInputCommand() && interaction.commandName === 'tournage') {
 
-        if (cible.id === interaction.user.id) {
-            return interaction.reply({ content: '❌ Tu ne peux pas te signaler toi-même !', ephemeral: true });
-        }
-        if (cible.bot) {
-            return interaction.reply({ content: '❌ Tu ne peux pas signaler un bot.', ephemeral: true });
+        if (interaction.channelId !== SALON_TOURNOI) {
+            return interaction.reply({
+                content: `❌ Cette commande doit être utilisée dans <#${SALON_TOURNOI}>`,
+                ephemeral: true
+            });
         }
 
-        const data   = loadData();
-        const signal = {
-            id:           crypto.randomUUID(),
-            reporterId:   interaction.user.id,
-            reporterName: interaction.user.username,
-            reportedId:   cible.id,
-            reportedName: cible.username,
-            raison,
-            commentaire,
-            timestamp:    new Date().toISOString(),
-            guildId:      interaction.guildId
-        };
-        data.signals.push(signal);
-        saveData(data);
+        const nom = interaction.options.getString('nom');
+        const horaires = interaction.options.getString('horaires');
+        const description = interaction.options.getString('description');
 
+        const embed = new EmbedBuilder()
+            .setTitle(`🏆 Tournoi : ${nom}`)
+            .setDescription(description)
+            .addFields({ name: '⏰ Horaires', value: horaires })
+            .setColor(0xF4C542)
+            .setFooter({ text: 'Clique sur "Participer" pour rejoindre le tournoi !' });
+
+        const bouton = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`participer__${nom}`)
+                .setLabel('🎮 Participer')
+                .setStyle(ButtonStyle.Primary)
+        );
+
+        const salon = interaction.guild.channels.cache.get(SALON_TOURNOI);
+        await salon.send({ embeds: [embed], components: [bouton] });
+        await interaction.reply({ content: '✅ Tournoi créé avec succès !', ephemeral: true });
+    }
+
+    // ─── Bouton "Participer" ──────────────────────────────────────────────
+    if (interaction.isButton() && interaction.customId.startsWith('participer__')) {
+        const nomTournoi = interaction.customId.replace('participer__', '');
+
+        const modal = new ModalBuilder()
+            .setCustomId(`formulaire__${nomTournoi}`)
+            .setTitle(`Inscription : ${nomTournoi}`);
+
+        const plateforme = new TextInputBuilder()
+            .setCustomId('plateforme')
+            .setLabel('Plateforme (PC, PS4, PS5, Xbox, Switch...)')
+            .setStyle(TextInputStyle.Short)
+            .setPlaceholder('Ex : PC')
+            .setRequired(true);
+
+        const pseudo = new TextInputBuilder()
+            .setCustomId('pseudo')
+            .setLabel('Pseudo Fortnite')
+            .setStyle(TextInputStyle.Short)
+            .setPlaceholder('Ton pseudo exact dans Fortnite')
+            .setRequired(true);
+
+        const age = new TextInputBuilder()
+            .setCustomId('age')
+            .setLabel('Âge')
+            .setStyle(TextInputStyle.Short)
+            .setPlaceholder('Ex : 18')
+            .setRequired(true);
+
+        modal.addComponents(
+            new ActionRowBuilder().addComponents(plateforme),
+            new ActionRowBuilder().addComponents(pseudo),
+            new ActionRowBuilder().addComponents(age)
+        );
+
+        await interaction.showModal(modal);
+    }
+
+    // ─── Formulaire soumis ────────────────────────────────────────────────
+    if (interaction.isModalSubmit() && interaction.customId.startsWith('formulaire__')) {
+        const nomTournoi = interaction.customId.replace('formulaire__', '');
+        const plateforme = interaction.fields.getTextInputValue('plateforme');
+        const pseudo = interaction.fields.getTextInputValue('pseudo');
+        const age = interaction.fields.getTextInputValue('age');
+
+        const salonAdmin = interaction.guild.channels.cache.get(SALON_ADMIN);
+
+        const embed = new EmbedBuilder()
+            .setTitle(`📋 Nouvelle demande — ${nomTournoi}`)
+            .addFields(
+                { name: '👤 Joueur', value: `<@${interaction.user.id}>`, inline: true },
+                { name: '🎮 Plateforme', value: plateforme, inline: true },
+                { name: '🏷️ Pseudo Fortnite', value: pseudo, inline: true },
+                { name: '🎂 Âge', value: age, inline: true }
+            )
+            .setColor(0x3498DB)
+            .setTimestamp()
+            .setFooter({ text: `ID : ${interaction.user.id}` });
+
+        const boutons = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`accepter__${interaction.user.id}__${nomTournoi}`)
+                .setLabel('✅ Accepter')
+                .setStyle(ButtonStyle.Success),
+            new ButtonBuilder()
+                .setCustomId(`refuser__${interaction.user.id}__${nomTournoi}`)
+                .setLabel('❌ Refuser')
+                .setStyle(ButtonStyle.Danger)
+        );
+
+        await salonAdmin.send({ embeds: [embed], components: [boutons] });
         await interaction.reply({
-            content: `✅ Signalement envoyé contre **${cible.username}** pour **${raison}**. Merci !`,
+            content: '✅ Ta demande a bien été envoyée ! Tu recevras une notification.',
             ephemeral: true
         });
     }
 
-    // ── /supsignal ────────────────────────────────────────────────────────────
-    if (interaction.isChatInputCommand() && interaction.commandName === 'supsignal') {
-        const data       = loadData();
-        const mesSignaux = data.signals.filter(
-            s => s.reporterId === interaction.user.id && s.guildId === interaction.guildId
-        );
+    // ─── Boutons Accepter / Refuser ───────────────────────────────────────
+    if (interaction.isButton() &&
+        (interaction.customId.startsWith('accepter__') || interaction.customId.startsWith('refuser__'))) {
 
-        if (mesSignaux.length === 0) {
-            return interaction.reply({ content: '📭 Tu n\'as fait aucun signalement pour l\'instant.', ephemeral: true });
+        const parts = interaction.customId.split('__');
+        const action = parts[0];
+        const userId = parts[1];
+        const nomTournoi = parts[2];
+
+        let membre;
+        try {
+            membre = await interaction.guild.members.fetch(userId);
+        } catch {
+            return interaction.reply({ content: '❌ Impossible de trouver ce joueur.', ephemeral: true });
         }
 
-        // On prend les 25 derniers (limite Discord pour un select menu)
-        const derniers = [...mesSignaux].reverse().slice(0, 25);
-
-        const embed = new EmbedBuilder()
-            .setTitle('📋 Mes signalements')
-            .setDescription(
-                derniers.map((s, i) =>
-                    `**${i + 1}.** <@${s.reportedId}> — ${s.raison}\n` +
-                    `> ${s.commentaire}\n` +
-                    `> 🕐 <t:${Math.floor(new Date(s.timestamp).getTime() / 1000)}:R>`
-                ).join('\n\n')
-            )
-            .setColor(0xE67E22)
-            .setFooter({ text: 'Sélectionne un signalement dans le menu pour le supprimer' });
-
-        const selectMenu = new StringSelectMenuBuilder()
-            .setCustomId('supsignal_select')
-            .setPlaceholder('🗑️ Choisir un signalement à supprimer...')
-            .addOptions(
-                derniers.map((s, i) => ({
-                    label:       `${s.reportedName} — ${s.raison}`.slice(0, 100),
-                    description: new Date(s.timestamp).toLocaleDateString('fr-FR'),
-                    value:       s.id
-                }))
-            );
-
-        const row = new ActionRowBuilder().addComponents(selectMenu);
-
-        await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
-    }
-
-    // ── Select menu suppression ───────────────────────────────────────────────
-    if (interaction.isStringSelectMenu() && interaction.customId === 'supsignal_select') {
-        const signalId = interaction.values[0];
-        const data     = loadData();
-        const index    = data.signals.findIndex(
-            s => s.id === signalId && s.reporterId === interaction.user.id
-        );
-
-        if (index === -1) {
-            return interaction.reply({ content: '❌ Signalement introuvable ou déjà supprimé.', ephemeral: true });
-        }
-
-        data.signals.splice(index, 1);
-        saveData(data);
-
-        await interaction.reply({ content: '✅ Signalement supprimé avec succès !', ephemeral: true });
-    }
-
-    // ── /adminsignal ──────────────────────────────────────────────────────────
-    if (interaction.isChatInputCommand() && interaction.commandName === 'adminsignal') {
-        const visible  = interaction.options.getBoolean('visible') ?? false;
-        const data     = loadData();
-        const signaux  = data.signals.filter(s => s.guildId === interaction.guildId);
-
-        if (signaux.length === 0) {
-            return interaction.reply({ content: '📭 Aucun signalement sur ce serveur.', ephemeral: !visible });
-        }
-
-        // Compter les signalements par utilisateur signalé
-        const compteur = {};
-        signaux.forEach(s => {
-            if (!compteur[s.reportedId]) {
-                compteur[s.reportedId] = {
-                    name:         s.reportedName,
-                    count:        0,
-                    commentaires: []
-                };
-            }
-            compteur[s.reportedId].count++;
-            if (s.commentaire && s.commentaire !== 'Aucun commentaire') {
-                compteur[s.reportedId].commentaires.push(
-                    `*"${s.commentaire}"* — par **${s.reporterName}** <t:${Math.floor(new Date(s.timestamp).getTime() / 1000)}:R>`
+        if (action === 'accepter') {
+            // Notif DM au joueur
+            try {
+                await membre.send(
+                    `🎉 **Félicitations !** Tu as été **accepté(e)** dans le tournoi **${nomTournoi}** !\n` +
+                    `Prépare-toi bien, bonne chance ! 🏆`
                 );
+            } catch {
+                console.log(`Impossible d'envoyer un DM à ${userId}`);
             }
-        });
 
-        // Trier du plus signalé au moins signalé
-        const sorted = Object.entries(compteur).sort((a, b) => b[1].count - a[1].count);
+            const embedMaj = EmbedBuilder.from(interaction.message.embeds[0])
+                .setColor(0x2ECC71)
+                .setFooter({ text: `✅ Accepté par ${interaction.user.tag}` });
 
-        // Classement
-        const classement = sorted.map(([id, info], i) => {
-            const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `**${i + 1}.**`;
-            return `${medal} <@${id}> — **${info.count}** signalement${info.count > 1 ? 's' : ''}`;
-        }).join('\n');
+            await interaction.update({ embeds: [embedMaj], components: [] });
 
-        // Commentaires (max 15 pour pas dépasser la limite Discord)
-        const tousCommentaires = sorted.flatMap(([id, info]) =>
-            info.commentaires.map(c => `<@${id}> : ${c}`)
-        ).slice(0, 15);
+        } else {
+            // Notif DM au joueur
+            try {
+                await membre.send(
+                    `❌ Ta demande de participation au tournoi **${nomTournoi}** a été **refusée**.\n` +
+                    `Tu peux retenter ta chance pour le prochain tournoi !`
+                );
+            } catch {
+                console.log(`Impossible d'envoyer un DM à ${userId}`);
+            }
 
-        const embed = new EmbedBuilder()
-            .setTitle('🚨 Tableau des signalements')
-            .addFields(
-                {
-                    name:  '📊 Classement (du plus au moins signalé)',
-                    value: classement || 'Aucun'
-                },
-                {
-                    name:  '💬 Commentaires laissés',
-                    value: tousCommentaires.length > 0
-                        ? tousCommentaires.join('\n')
-                        : 'Aucun commentaire'
-                }
-            )
-            .setColor(0xE74C3C)
-            .setTimestamp()
-            .setFooter({ text: `${signaux.length} signalement${signaux.length > 1 ? 's' : ''} au total sur ce serveur` });
+            const embedMaj = EmbedBuilder.from(interaction.message.embeds[0])
+                .setColor(0xE74C3C)
+                .setFooter({ text: `❌ Refusé par ${interaction.user.tag}` });
 
-        await interaction.reply({ embeds: [embed], ephemeral: !visible });
+            await interaction.update({ embeds: [embedMaj], components: [] });
+        }
     }
 });
 
